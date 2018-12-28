@@ -1,4 +1,252 @@
 package OOP.Solution;
 
+import OOP.Provided.OOPAssertionFailure;
+import OOP.Provided.OOPExceptionMismatchError;
+import OOP.Provided.OOPExpectedException;
+import OOP.Provided.OOPResult;
+
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Method;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 public class OOPUnitCore {
+    // private fields so we can access them from every method without having to carry it around
+    private static Object var;
+    private static Object var_copy;
+    private static boolean copy_valid;
+    private static Class<?> fieldForTestClass;
+    private static OOPExpectedExceptionImpl expectedException;
+    // comparator for getting the order we want, might need to be changed
+    // in order to support comparing with inherited methods
+    private static class compareByOrder implements Comparator<Method>{
+        @Override
+        public int compare(Method o1, Method o2) {
+            int order1, order2;
+            try{
+                if( !o1.isAnnotationPresent(OOPTest.class) || !o2.isAnnotationPresent(OOPTest.class))
+                    throw new Exception();
+                order1 = o1.getAnnotation(OOPTest.class).order();
+                order2 = o2.getAnnotation(OOPTest.class).order();
+            }catch (Exception e){
+                //TODO is this the correct way to handle this?
+                throw new AssertionError();
+            }
+            return order1 - order2;
+        }
+    }
+    // methods for saving the class instance and recovering in case of failures
+    // in beforeTest and afterTest
+    private static void copyReflectedObjects(Object source, Object destination){
+        Arrays.stream(fieldForTestClass.getDeclaredFields())
+                .forEach(field -> {
+                    try{
+                        if(Arrays.stream(field.getType().getInterfaces())
+                                .collect(Collectors.toSet())
+                                .contains(Cloneable.class)){
+                            //field is cloneable
+                            field.set(destination,
+                                    field.getType().getMethod("clone").invoke(field.get(source)));
+                        }else{
+                            try {
+                                // try to use the copy constructor
+                                field.set(destination,
+                                        field.getType().getConstructor((field.getType())).newInstance(field.get(source)));
+                            }catch (Exception e){
+                                // field doesn't have either
+                                field.set(destination, field.get(source));
+                            }
+                        }
+                    }
+                    catch (Exception e){
+                        // something weird happened, not supposed to get here
+                    }
+                } );
+    }
+    private static void snapshotObject(){
+        if(copy_valid){
+            //something wierd happened, not supposed to get here
+        }
+        copyReflectedObjects(var, var_copy);
+        copy_valid = true;
+    }
+    private static void recoverObject(){
+        if(!copy_valid){
+            //something wierd happened, not supposed to get here
+        }
+        copyReflectedObjects(var_copy, var);
+        copy_valid = false;
+    }
+    // methods for getting the desired methods in each phase of the test
+    private static List<Method> getMethodsAnnotatedBy(Class<?> testClass, Class<? extends Annotation> annotation){
+        return Arrays.stream(testClass.getMethods())
+                .filter(m -> m.isAnnotationPresent(annotation))
+                .collect(Collectors.toList());
+    }
+    private static List<Method> getSetUpMethods( Class<?> testClass){
+        return getMethodsAnnotatedBy(testClass, OOPSetup.class);
+    }
+    private static List<Method> getTaggedMethods(Class<?> testClass, String tag){
+        return getOOPTestMethods(testClass).stream()
+                .filter(m -> m.getAnnotation(OOPTest.class).tag().equals(tag))
+                .collect(Collectors.toList());
+    }
+    private static List<Method> getOOPTestMethods(Class<?> testClass){
+        return getMethodsAnnotatedBy(testClass, OOPTest.class);
+    }
+    private static List<Method> getMethodsBeforeOrAfter(Class<?> testClass, String methodName, boolean before){
+        Method method;
+        try{
+             method = testClass.getMethod(methodName);
+        }catch (Exception e){
+            // not supposed to get here
+            throw new RuntimeException(e);
+        }
+        return Arrays.stream(testClass.getMethods())
+                .filter(m -> {
+                    Stream<String> tmpStream = before ? Arrays.stream(method.getAnnotation(OOPBefore.class).value())
+                            : Arrays.stream(method.getAnnotation(OOPAfter.class).value());
+                    return tmpStream
+                            .collect(Collectors.toSet())
+                            .contains(m.getName());
+                })
+                .collect(Collectors.toList());
+    }
+    private static List<Method> getOOPBeforeMethods(Class<?> testClass, String methodName){
+        return getMethodsBeforeOrAfter(testClass, methodName, true);
+    }
+    private static List<Method> getOOPAfterMethods(Class<?> testClass, String methodName){
+        return getMethodsBeforeOrAfter(testClass, methodName, false);
+    }
+    // methods for invoking the desired methods
+    private static void invokeCheckIntoUnchecked(Method m){
+        try{
+            m.invoke(var);
+        }
+        catch (Exception e){
+            throw new RuntimeException(e);
+        }
+    }
+    private static OOPResultImpl invokeMethod(Method method){
+        try{
+            method.invoke(var);
+            if(expectedException.expectesAnException()){
+                // we expect an exception, but no exception was thrown
+                return new OOPResultImpl(OOPResult.OOPTestResult.ERROR,expectedException.getExpectedException().getClass().getName());
+            }
+            // method was invoked successfully
+            return new OOPResultImpl(OOPResult.OOPTestResult.SUCCESS,null);
+        }
+        catch (OOPAssertionFailure assertion){
+            // received an assertion - test failed
+            return new OOPResultImpl(OOPResult.OOPTestResult.FAILURE, assertion.getMessage());
+        }
+        catch ( Exception e){
+            if(!expectedException.expectesAnException())
+                // we did not expect an exception, but an exception was thrown
+                return new OOPResultImpl(OOPResult.OOPTestResult.ERROR,e.getClass().getName());
+            if(expectedException.assertExpected(e))
+                // the expected exception was thrown
+                return new OOPResultImpl(OOPResult.OOPTestResult.SUCCESS,null);
+            // an exception which we did not expect was thrown
+            return new OOPResultImpl(OOPResult.OOPTestResult.EXPECTED_EXCEPTION_MISMATCH,
+                    (new OOPExceptionMismatchError(expectedException.getExpectedException(), e)).getMessage());
+        }
+    }
+    private static boolean runBeforeOrAfterTests(Method method, Function<String, List<Method>> action){
+        List<Method> methodsToRun = action.apply(method.getName());
+        snapshotObject();
+        try {
+            methodsToRun.forEach(m -> invokeCheckIntoUnchecked(m));
+        }catch (Exception e){
+            recoverObject();
+            // we are not supposed to get an exception in recoverObject, because it does the same
+            // as snapshotObject, and if we are here it means that snapshot succeeded
+            return false;
+        }
+        copy_valid = false;
+        return true;
+    }
+    private static OOPResultImpl invokeTestMethod(Method method) {
+        OOPResultImpl tmp;
+        try{
+            // run OOPBefore methods
+            if(!runBeforeOrAfterTests(method, str -> getOOPBeforeMethods(fieldForTestClass, str))){
+                return new OOPResultImpl(OOPResult.OOPTestResult.ERROR, fieldForTestClass.getName());
+            }
+            // TODO should the expected exception be reset here, or before the BeforeMethods?
+            expectedException = (OOPExpectedExceptionImpl) expectedException.none();
+            // run test
+             tmp = invokeMethod(method);
+
+            // run OOPAfter methods
+            if(!runBeforeOrAfterTests(method, str -> getOOPAfterMethods(fieldForTestClass, str))){
+                return new OOPResultImpl(OOPResult.OOPTestResult.ERROR, fieldForTestClass.getName());
+            }
+
+        }catch (Exception e){
+            // we got an exception in getOOPBeforeMethods or getOOPAfterMethods
+            // most likely in getOOPBefore, need to think about the situations
+        }
+        return tmp;
+    }
+    private static OOPTestSummary runTestsForRunClass(Class<?> testClass, List<Method> testsToRun){
+        fieldForTestClass = testClass;
+        copy_valid = false;
+        Map<String, OOPResult> testMap = new HashMap<>();
+
+        try{
+            // create a new instance of the class
+            // it is "DeclaredConstructor" in order to get the latest version of it
+            var = testClass.getDeclaredConstructor().newInstance();
+            // get the expected exception field
+            OOPExpectedException expectedException =  (OOPExpectedException) Arrays.stream(testClass.getFields())
+                    .filter(field ->  field.isAnnotationPresent(OOPExceptionRule.class))
+                    .findFirst()    //TODO check if there is an expected exception
+                    .get().get(OOPExpectedException.class);
+            // run setUp methods
+            // TODO improve it to work according to the order of inheritence
+            getSetUpMethods(testClass).forEach(m -> invokeCheckIntoUnchecked(m) );
+            // run the tests
+            if(testClass.isAnnotationPresent(OOPTestClass.class)){
+                // TODO does it need to be checked?
+                if(testClass.getAnnotation(OOPTestClass.class).value()
+                        == OOPTestClass.OOPTestClassType.ORDERED)
+                    testsToRun.sort(new compareByOrder());
+            }
+            testsToRun.forEach(m -> {
+                testMap.put(m.getName(), invokeTestMethod(m));
+            });
+        }catch (Exception e){
+            // we are given that we may assume that the class wll have a constructor
+        }
+        return new OOPTestSummary(testMap);
+    }
+
+    // the methods of part 3
+    public static void assertEquals(Object expected,  Object actual){
+        boolean res = false;
+        try{
+            // in case equals throws an exception
+            res = !(expected.equals(actual) && actual.equals(expected));
+        }
+        catch (Exception e){
+            throw new OOPAssertionFailure(expected, actual);
+        }
+        if(res)
+            throw new OOPAssertionFailure(expected, actual);
+    }
+    public static void fail(){
+        throw new OOPAssertionFailure();
+    }
+    public static OOPTestSummary runClass(Class<?> testClass){
+        List<Method> testToRun = getOOPTestMethods(testClass);
+        return runTestsForRunClass(testClass, testToRun);
+    }
+    public static  OOPTestSummary runClass(Class<?> testClass, String tag){
+        List<Method> testsToRun = getTaggedMethods(testClass, tag);
+        return runTestsForRunClass(testClass, testsToRun);
+    }
 }
