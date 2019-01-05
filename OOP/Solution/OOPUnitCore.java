@@ -6,6 +6,7 @@ import OOP.Provided.OOPExpectedException;
 import OOP.Provided.OOPResult;
 
 import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.util.function.Function;
@@ -103,20 +104,23 @@ public class OOPUnitCore {
         return getMethodsAnnotatedBy(testClass, OOPTest.class);
     }
     private static List<Method> getMethodsBeforeOrAfter(Class<?> testClass, String methodName, boolean before){
-        Method method;
-        try{
-             method = testClass.getMethod(methodName);
-        }catch (Exception e){
-            // not supposed to get here
-            throw new RuntimeException(e);
-        }
         return Arrays.stream(testClass.getMethods())
                 .filter(m -> {
-                    Stream<String> tmpStream = before ? Arrays.stream(method.getAnnotation(OOPBefore.class).value())
-                            : Arrays.stream(method.getAnnotation(OOPAfter.class).value());
+                    Stream<String> tmpStream;
+                    if (before){
+                        if(!m.isAnnotationPresent(OOPBefore.class)){
+                            return false;
+                        }
+                        tmpStream = Arrays.stream(m.getAnnotation(OOPBefore.class).value());
+                    }else{
+                        if(!m.isAnnotationPresent(OOPAfter.class)){
+                            return false;
+                        }
+                        tmpStream = Arrays.stream(m.getAnnotation(OOPAfter.class).value());
+                    }
                     return tmpStream
                             .collect(Collectors.toSet())
-                            .contains(m.getName());
+                            .contains(methodName);
                 })
                 .collect(Collectors.toList());
     }
@@ -196,6 +200,7 @@ public class OOPUnitCore {
         }catch (Exception e){
             // we got an exception in getOOPBeforeMethods or getOOPAfterMethods
             // most likely in getOOPBefore, need to think about the situations
+            System.out.println("why am i here???");
         }
         //TODO: is this ok? if we got here, we didn;t catch anything
         return new OOPResultImpl(OOPResult.OOPTestResult.SUCCESS, null);
@@ -210,15 +215,16 @@ public class OOPUnitCore {
             // it is "DeclaredConstructor" in order to get the latest version of it
             var = testClass.getDeclaredConstructor().newInstance();
             // get the expected exception field
-            expectedException =  (OOPExpectedExceptionImpl) Arrays.stream(testClass.getDeclaredFields())
+            // TODO: fix it to search reqursively in the inheritence tree for the field
+            Field tmp = Arrays.stream(testClass.getDeclaredFields())
                     .filter(field ->  field.isAnnotationPresent(OOPExceptionRule.class))
-                    .findAny()
-                    .get().get(OOPExpectedException.class);
+                    .findFirst().get();
+            tmp.setAccessible(true);    //For private fields
+            expectedException =  (OOPExpectedExceptionImpl) tmp.get(OOPExpectedException.class);
         }catch (Exception e){
             // we are given that we may assume that the class wll have a constructor,
             // so we are here because there is no OOPExceptionRule field in the testClass
-            // TODO: the OOPExceptionRule in exampleClass is private! so it doesn't let us get it...
-            System.out.println("why am i here???");
+            expectedException =(OOPExpectedExceptionImpl) OOPExpectedExceptionImpl.none();
         }
         finally {
             // run setUp methods
