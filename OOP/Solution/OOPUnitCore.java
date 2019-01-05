@@ -134,9 +134,11 @@ public class OOPUnitCore {
     // methods for invoking the desired methods
     private static void invokeCheckIntoUnchecked(Method m){
         try{
+            //TODO what if we are trying to invoke a private method? -> m.setAccessible(true)
             m.invoke(var);
         }
         catch (Exception e){
+            // we invoked a private method
             throw new RuntimeException(e);
         }
     }
@@ -191,8 +193,10 @@ public class OOPUnitCore {
                 return new OOPResultImpl(OOPResult.OOPTestResult.ERROR, fieldForTestClass.getName());
             }
             // TODO should the expected exception be reset here, or before the BeforeMethods?
-            // exceptionField.set(var,OOPExpectedException.none() );
-            // expectedException = (OOPExpectedExceptionImpl) expectedException.none();
+            if(exceptionField != null) {
+                exceptionField.set(var, OOPExpectedException.none());
+                expectedException = (OOPExpectedExceptionImpl) exceptionField.get(var);
+            }
             // run test
              tmp = invokeMethod(method);
 
@@ -221,7 +225,7 @@ public class OOPUnitCore {
             var = testClass.getDeclaredConstructor().newInstance();
             // get the expected exception field
             // TODO: fix it to search reqursively in the inheritence tree for the field
-            exceptionField = Arrays.stream(var.getClass().getDeclaredFields())
+            exceptionField = Arrays.stream(testClass.getDeclaredFields())
                     .filter(field ->  field.isAnnotationPresent(OOPExceptionRule.class))
                     .findFirst().get();
             exceptionField.setAccessible(true);    //For private fields
@@ -229,6 +233,7 @@ public class OOPUnitCore {
         }catch (Exception e){
             // we are given that we may assume that the class wll have a constructor,
             // so we are here because there is no OOPExceptionRule field in the testClass
+            exceptionField = null;
             expectedException =(OOPExpectedExceptionImpl) OOPExpectedExceptionImpl.none();
         }
         finally {
@@ -251,16 +256,18 @@ public class OOPUnitCore {
 
     // the methods of part 3
     public static void assertEquals(Object expected,  Object actual){
-        boolean res = false;
-        try{
-            // in case equals throws an exception
-            res = !(expected.equals(actual) && actual.equals(expected));
+        if(!(expected == null && actual == null)) {
+            boolean res = false;
+            try {
+                // in case equals throws an exception
+                res = !(expected.equals(actual) && actual.equals(expected));
+            } catch (Exception e) {
+                throw new OOPAssertionFailure(expected, actual);
+            }
+            if (res)
+                throw new OOPAssertionFailure(expected, actual);
         }
-        catch (Exception e){
-            throw new OOPAssertionFailure(expected, actual);
-        }
-        if(res)
-            throw new OOPAssertionFailure(expected, actual);
+        // both are null, which is ok
     }
     public static void fail(){
         throw new OOPAssertionFailure();

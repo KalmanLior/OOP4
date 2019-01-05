@@ -39,6 +39,8 @@ public class OOPExpectedExceptionImpl implements OOPExpectedException{
         if(!expectedException.isInstance(e))
             return false;
         String msg = e.getMessage();
+        if(msg == null)
+            return (expectedMessages.size() == 0);
         // check that all expectedMessages are substrings of the message of e
         return expectedMessages.stream()
                 .filter(s -> !(msg.contains(s)))
