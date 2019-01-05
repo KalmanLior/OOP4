@@ -12,6 +12,12 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+/*
+    Note: getDeclaredFields() returns an array of all fields declared by this class or interface which it represents,
+    of all access levels, but not the inherited fields!
+    getFields() returns an array of only public fields! (not sure about inheritence)
+ */
+
 public class OOPUnitCore {
     // private fields so we can access them from every method without having to carry it around
     private static Object var;
@@ -143,7 +149,7 @@ public class OOPUnitCore {
             // received an assertion - test failed
             return new OOPResultImpl(OOPResult.OOPTestResult.FAILURE, assertion.getMessage());
         }
-        catch ( Exception e){
+        catch (Exception e){
             if(!expectedException.expectesAnException())
                 // we did not expect an exception, but an exception was thrown
                 return new OOPResultImpl(OOPResult.OOPTestResult.ERROR,e.getClass().getName());
@@ -152,7 +158,7 @@ public class OOPUnitCore {
                 return new OOPResultImpl(OOPResult.OOPTestResult.SUCCESS,null);
             // an exception which we did not expect was thrown
             return new OOPResultImpl(OOPResult.OOPTestResult.EXPECTED_EXCEPTION_MISMATCH,
-                    (new OOPExceptionMismatchError(expectedException.getExpectedException(), e)).getMessage());
+                    (new OOPExceptionMismatchError(expectedException.getExpectedException(), e.getClass() )).getMessage());
         }
     }
     private static boolean runBeforeOrAfterTests(Method method, Function<String, List<Method>> action){
@@ -185,12 +191,14 @@ public class OOPUnitCore {
             if(!runBeforeOrAfterTests(method, str -> getOOPAfterMethods(fieldForTestClass, str))){
                 return new OOPResultImpl(OOPResult.OOPTestResult.ERROR, fieldForTestClass.getName());
             }
+            return tmp;
 
         }catch (Exception e){
             // we got an exception in getOOPBeforeMethods or getOOPAfterMethods
             // most likely in getOOPBefore, need to think about the situations
         }
-        return tmp;
+        //TODO: is this ok? if we got here, we didn;t catch anything
+        return new OOPResultImpl(OOPResult.OOPTestResult.SUCCESS, null);
     }
     private static OOPTestSummary runTestsForRunClass(Class<?> testClass, List<Method> testsToRun){
         fieldForTestClass = testClass;
@@ -202,10 +210,17 @@ public class OOPUnitCore {
             // it is "DeclaredConstructor" in order to get the latest version of it
             var = testClass.getDeclaredConstructor().newInstance();
             // get the expected exception field
-            OOPExpectedException expectedException =  (OOPExpectedException) Arrays.stream(testClass.getFields())
+            expectedException =  (OOPExpectedExceptionImpl) Arrays.stream(testClass.getDeclaredFields())
                     .filter(field ->  field.isAnnotationPresent(OOPExceptionRule.class))
-                    .findFirst()    //TODO check if there is an expected exception
+                    .findAny()
                     .get().get(OOPExpectedException.class);
+        }catch (Exception e){
+            // we are given that we may assume that the class wll have a constructor,
+            // so we are here because there is no OOPExceptionRule field in the testClass
+            // TODO: the OOPExceptionRule in exampleClass is private! so it doesn't let us get it...
+            System.out.println("why am i here???");
+        }
+        finally {
             // run setUp methods
             // TODO improve it to work according to the order of inheritence
             getSetUpMethods(testClass).forEach(m -> invokeCheckIntoUnchecked(m) );
@@ -219,8 +234,6 @@ public class OOPUnitCore {
             testsToRun.forEach(m -> {
                 testMap.put(m.getName(), invokeTestMethod(m));
             });
-        }catch (Exception e){
-            // we are given that we may assume that the class wll have a constructor
         }
         return new OOPTestSummary(testMap);
     }
