@@ -26,6 +26,7 @@ public class OOPUnitCore {
     private static boolean copy_valid;
     private static Class<?> fieldForTestClass;
     private static OOPExpectedExceptionImpl expectedException;
+    private static Field exceptionField;
     // comparator for getting the order we want, might need to be changed
     // in order to support comparing with inherited methods
     private static class compareByOrder implements Comparator<Method>{
@@ -149,20 +150,23 @@ public class OOPUnitCore {
             // method was invoked successfully
             return new OOPResultImpl(OOPResult.OOPTestResult.SUCCESS,null);
         }
-        catch (OOPAssertionFailure assertion){
+        catch (java.lang.reflect.InvocationTargetException e){
             // received an assertion - test failed
-            return new OOPResultImpl(OOPResult.OOPTestResult.FAILURE, assertion.getMessage());
-        }
-        catch (Exception e){
+            if(e.getTargetException().getClass().equals(OOPAssertionFailure.class))
+                return new OOPResultImpl(OOPResult.OOPTestResult.FAILURE, e.getMessage());
             if(!expectedException.expectesAnException())
                 // we did not expect an exception, but an exception was thrown
                 return new OOPResultImpl(OOPResult.OOPTestResult.ERROR,e.getClass().getName());
-            if(expectedException.assertExpected(e))
+            if(expectedException.assertExpected((Exception) e.getTargetException()))
                 // the expected exception was thrown
                 return new OOPResultImpl(OOPResult.OOPTestResult.SUCCESS,null);
             // an exception which we did not expect was thrown
             return new OOPResultImpl(OOPResult.OOPTestResult.EXPECTED_EXCEPTION_MISMATCH,
                     (new OOPExceptionMismatchError(expectedException.getExpectedException(), e.getClass() )).getMessage());
+        }
+        catch (Exception e){
+            // we get here if we try to invoke a private method
+            throw new RuntimeException(e);
         }
     }
     private static boolean runBeforeOrAfterTests(Method method, Function<String, List<Method>> action){
@@ -187,7 +191,8 @@ public class OOPUnitCore {
                 return new OOPResultImpl(OOPResult.OOPTestResult.ERROR, fieldForTestClass.getName());
             }
             // TODO should the expected exception be reset here, or before the BeforeMethods?
-            expectedException = (OOPExpectedExceptionImpl) expectedException.none();
+            // exceptionField.set(var,OOPExpectedException.none() );
+            // expectedException = (OOPExpectedExceptionImpl) expectedException.none();
             // run test
              tmp = invokeMethod(method);
 
@@ -216,11 +221,11 @@ public class OOPUnitCore {
             var = testClass.getDeclaredConstructor().newInstance();
             // get the expected exception field
             // TODO: fix it to search reqursively in the inheritence tree for the field
-            Field tmp = Arrays.stream(testClass.getDeclaredFields())
+            exceptionField = Arrays.stream(var.getClass().getDeclaredFields())
                     .filter(field ->  field.isAnnotationPresent(OOPExceptionRule.class))
                     .findFirst().get();
-            tmp.setAccessible(true);    //For private fields
-            expectedException =  (OOPExpectedExceptionImpl) tmp.get(OOPExpectedException.class);
+            exceptionField.setAccessible(true);    //For private fields
+            expectedException =  (OOPExpectedExceptionImpl) exceptionField.get(var);
         }catch (Exception e){
             // we are given that we may assume that the class wll have a constructor,
             // so we are here because there is no OOPExceptionRule field in the testClass

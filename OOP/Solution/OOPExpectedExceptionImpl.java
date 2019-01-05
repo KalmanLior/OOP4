@@ -36,7 +36,7 @@ public class OOPExpectedExceptionImpl implements OOPExpectedException{
         if(is_none)
             return false;
         // check that the given exception is an instance of the expectedException
-        if (!e.getClass().isInstance(expectedException))
+        if(!expectedException.isInstance(e))
             return false;
         String msg = e.getMessage();
         // check that all expectedMessages are substrings of the message of e
