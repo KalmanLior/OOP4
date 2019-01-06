@@ -6,35 +6,36 @@ public class OOPResultImpl implements OOPResult {
     private OOPTestResult res;
     private String msg;
 
-    public OOPResultImpl(){
+    public OOPResultImpl() {
         res = null;
         msg = "";
     }
 
-    public OOPResultImpl(OOPTestResult result, String message){
+    public OOPResultImpl(OOPTestResult result, String message) {
         res = result;
         msg = message;
     }
 
-    public OOPTestResult getResultType(){
+    public OOPTestResult getResultType() {
         return res;
     }
 
 
-    public String getMessage(){
+    public String getMessage() {
         return msg;
     }
 
-    protected boolean eq(Object obj){
-        if(!(obj instanceof OOPResultImpl))
+    protected boolean eq(Object obj) {
+        if (!(obj instanceof OOPResultImpl))
             return false;
-        return (((OOPResultImpl)obj).getMessage().equals(msg)
-                && (((OOPResultImpl)obj).getResultType() == res));
-    }
-    @Override
-    public boolean equals(Object obj){
-        return (this.eq(obj) && ((OOPResultImpl)obj).eq(this));
+        return (((OOPResultImpl) obj).getMessage().equals(msg)
+                && (((OOPResultImpl) obj).getResultType() == res));
     }
 
-    // TODO: 1) override hashCode? 2) setters for msg =, res?
+    @Override
+    public boolean equals(Object obj) {
+        return (this.eq(obj) && ((OOPResultImpl) obj).eq(this));
+    }
+
+    // TODO: 1) override hashCode? 2) setters for msg, res?
 }
