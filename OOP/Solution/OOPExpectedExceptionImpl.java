@@ -13,9 +13,11 @@ public class OOPExpectedExceptionImpl implements OOPExpectedException{
         expectedMessages = new HashSet<>();
         is_none = true;
     }
+
     public boolean expectesAnException(){
         return !is_none;
     }
+
     public Class<? extends Exception> getExpectedException(){
         return expectedException;
     }

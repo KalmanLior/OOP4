@@ -5,12 +5,12 @@ import OOP.Provided.OOPResult;
 public class OOPResultImpl implements OOPResult {
     private OOPTestResult res;
     private String msg;
-    
+
     public OOPResultImpl(){
         res = null;
         msg = "";
     }
-    
+
     public OOPResultImpl(OOPTestResult result, String message){
         res = result;
         msg = message;
@@ -35,6 +35,6 @@ public class OOPResultImpl implements OOPResult {
     public boolean equals(Object obj){
         return (this.eq(obj) && ((OOPResultImpl)obj).eq(this));
     }
-    
+
     // TODO: 1) override hashCode? 2) setters for msg =, res?
 }
