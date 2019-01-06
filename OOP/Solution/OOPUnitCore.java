@@ -4,6 +4,8 @@ import OOP.Provided.OOPAssertionFailure;
 import OOP.Provided.OOPExceptionMismatchError;
 import OOP.Provided.OOPExpectedException;
 import OOP.Provided.OOPResult;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
@@ -241,12 +243,9 @@ public class OOPUnitCore {
             // TODO improve it to work according to the order of inheritence
             getSetUpMethods(testClass).forEach(m -> invokeCheckIntoUnchecked(m) );
             // run the tests
-            if(testClass.isAnnotationPresent(OOPTestClass.class)){
-                // TODO does it need to be checked?
-                if(testClass.getAnnotation(OOPTestClass.class).value()
-                        == OOPTestClass.OOPTestClassType.ORDERED)
-                    testsToRun.sort(new compareByOrder());
-            }
+            if(testClass.getAnnotation(OOPTestClass.class).value()
+                       == OOPTestClass.OOPTestClassType.ORDERED)
+                testsToRun.sort(new compareByOrder());
             testsToRun.forEach(m -> {
                 testMap.put(m.getName(), invokeTestMethod(m));
             });
@@ -273,10 +272,14 @@ public class OOPUnitCore {
         throw new OOPAssertionFailure();
     }
     public static OOPTestSummary runClass(Class<?> testClass){
+        if(testClass == null || !testClass.isAnnotationPresent(OOPTestClass.class))
+            throw new IllegalArgumentException();
         List<Method> testToRun = getOOPTestMethods(testClass);
         return runTestsForRunClass(testClass, testToRun);
     }
     public static  OOPTestSummary runClass(Class<?> testClass, String tag){
+        if(testClass == null || tag == null || !testClass.isAnnotationPresent(OOPTestClass.class))
+            throw new IllegalArgumentException();
         List<Method> testsToRun = getTaggedMethods(testClass, tag);
         return runTestsForRunClass(testClass, testsToRun);
     }
