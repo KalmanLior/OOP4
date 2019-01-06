@@ -9,6 +9,7 @@ public class OOPExpectedExceptionImpl implements OOPExpectedException{
     private HashSet<String> expectedMessages;
     private boolean is_none;
     private OOPExpectedExceptionImpl(){
+        expectedException = null;
         expectedMessages = new HashSet<>();
         is_none = true;
     }
