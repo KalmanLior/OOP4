@@ -29,5 +29,6 @@ public class OOPResultImpl implements OOPResult {
     public boolean equals(Object obj){
         return (this.eq(obj) && ((OOPResultImpl)obj).eq(this));
     }
-
+    
+    // TODO: override hashCode?
 }
