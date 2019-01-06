@@ -10,6 +10,7 @@ import java.lang.annotation.Target;
 public @interface OOPTest {
     // TODO: need to check if this is the correct thing to do,
     // otherwise the tests from last year do not compile
+    // looks fine to me. order's default value should only be < 1 I guess..
     int order() default -1;
     String tag() default  "";
 }
