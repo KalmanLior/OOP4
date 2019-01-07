@@ -37,5 +37,5 @@ public class OOPResultImpl implements OOPResult {
         return (this.eq(obj) && ((OOPResultImpl) obj).eq(this));
     }
 
-    // TODO: 1) override hashCode? 2) setters for msg, res?
+    // TODO: override hashCode?
 }

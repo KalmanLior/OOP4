@@ -8,9 +8,6 @@ import java.lang.annotation.Target;
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface OOPTest {
-    // TODO: need to check if this is the correct thing to do,
-    // otherwise the tests from last year do not compile
-    // looks fine to me. order's default value should only be < 1 I guess..
     int order() default 0;
     String tag() default  "";
 }

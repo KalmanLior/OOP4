@@ -4,17 +4,14 @@ import OOP.Provided.OOPAssertionFailure;
 import OOP.Provided.OOPExceptionMismatchError;
 import OOP.Provided.OOPExpectedException;
 import OOP.Provided.OOPResult;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.util.function.Function;
-import java.util.stream.Collector;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /*
     Note: getDeclaredFields() returns an array of all fields declared by this class or interface which it represents,
@@ -50,6 +47,7 @@ public class OOPUnitCore {
     }
     // methods for saving the class instance and recovering in case of failures
     // in beforeTest and afterTest
+
     private static void copyReflectedObjects(Object source, Object destination){
         Arrays.stream(fieldForTestClass.getDeclaredFields())
                 .forEach(field -> {
@@ -60,12 +58,12 @@ public class OOPUnitCore {
                                 .contains(Cloneable.class)){
                             //field is cloneable
                             field.set(destination,
-                                    field.getType().getMethod("clone").invoke(field.get(source)));
+                                    field.getType().getDeclaredMethod("clone").invoke(field.get(source)));
                         }else{
                             try {
                                 // try to use the copy constructor
                                 field.set(destination,
-                                        field.getType().getConstructor((field.getType())).newInstance(field.get(source)));
+                                        field.getType().getDeclaredConstructor((field.getType())).newInstance(field.get(source)));
                             }catch (Exception e){
                                 // field doesn't have either
                                 field.set(destination, field.get(source));
@@ -77,18 +75,55 @@ public class OOPUnitCore {
                     }
                 } );
     }
+
+//    private static void copyReflectedObjects(Object source, Object destination){
+//        Field[] fields = fieldForTestClass.getDeclaredFields();
+//        for(Field field : fields){
+//            try {
+//                field.setAccessible(true);
+//                Object sourceField = field.get(source);
+//                Object destField = sourceField;
+//                Constructor copyConst = null;
+//                Method clone = null;
+//                try{
+//                    clone = sourceField.getClass().getDeclaredMethod("clone");
+//                } catch (Exception e){
+//                }
+//                if(clone != null){
+//                    clone.setAccessible(true);
+//                    destField = clone.invoke(sourceField);
+//                } else {
+//                    try {
+//                        copyConst = sourceField.getClass().getDeclaredConstructor(sourceField.getClass());
+//                    } catch (Exception e) {
+//                    }
+//                    if (copyConst != null) {
+//                        copyConst.setAccessible(true);
+//                        destField = copyConst.newInstance(sourceField);
+//                    }
+//                }
+//                field.set(destination,destField);
+//            } catch (Exception e) {
+//            }
+//        }
+//    }
+
+
     private static void snapshotObject(){
-        if(copy_valid){
-            //something wierd happened, not supposed to get here
-            System.out.println("Why am i here in snapshot object???");
-        }
+        assert (!copy_valid);
+//        if(copy_valid){
+//            //something wierd happened, not supposed to get here
+//            System.out.println("Why am i here in snapshot object???");
+//        }
         copyReflectedObjects(var, var_copy);
         copy_valid = true;
     }
     private static void recoverObject(){
-        if(!copy_valid){
-            //something wierd happened, not supposed to get here
-        }
+        assert (copy_valid);
+//        if(!copy_valid){
+//              something wierd happened, not supposed to get here
+//              System.out.println("Why am i here in recover object???");
+//        }
         copyReflectedObjects(var_copy, var);
         copy_valid = false;
     }
@@ -259,6 +294,7 @@ public class OOPUnitCore {
             Arrays.stream(testClass.getDeclaredMethods()).forEach(c -> c.setAccessible(true));
             testClass.getDeclaredConstructor().setAccessible(true);
             var = testClass.getDeclaredConstructor().newInstance();
+            var_copy = testClass.getDeclaredConstructor().newInstance();
             // get the expected exception field
             // TODO: fix it to search reqursively in the inheritence tree for the field
             exceptionField = Arrays.stream(testClass.getDeclaredFields())
