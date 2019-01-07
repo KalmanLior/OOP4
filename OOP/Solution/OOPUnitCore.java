@@ -12,6 +12,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.util.function.Function;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -53,6 +54,7 @@ public class OOPUnitCore {
         Arrays.stream(fieldForTestClass.getDeclaredFields())
                 .forEach(field -> {
                     try{
+                        field.setAccessible(true);
                         if(Arrays.stream(field.getType().getInterfaces())
                                 .collect(Collectors.toSet())
                                 .contains(Cloneable.class)){
@@ -78,6 +80,7 @@ public class OOPUnitCore {
     private static void snapshotObject(){
         if(copy_valid){
             //something wierd happened, not supposed to get here
+            System.out.println("Why am i here in snapshot object???");
         }
         copyReflectedObjects(var, var_copy);
         copy_valid = true;
@@ -91,9 +94,24 @@ public class OOPUnitCore {
     }
     // methods for getting the desired methods in each phase of the test
     private static List<Method> getMethodsAnnotatedBy(Class<?> testClass, Class<? extends Annotation> annotation){
-        return Arrays.stream(testClass.getMethods())
-                .filter(m -> m.isAnnotationPresent(annotation))
-                .collect(Collectors.toList());
+        LinkedList<Method> annotated_methods = new LinkedList<>();
+        Class<?> itr = testClass;
+        while(!itr.equals(Object.class)){
+            LinkedList<Method> tmp = (LinkedList<Method>)annotated_methods.clone();
+            Arrays.stream(itr.getDeclaredMethods()).forEach(m -> m.setAccessible(true));
+            annotated_methods.addAll(Arrays.stream(itr.getDeclaredMethods())
+                    .filter(m -> m.isAnnotationPresent(annotation))
+                    .filter(m -> (tmp.stream().filter(m2 ->
+                            (m2.getName().equals(m.getName()) &&
+                            m2.getReturnType().equals(m.getReturnType()) &&
+                                    Arrays.equals(m2.getParameterTypes(), m.getParameterTypes()))).count() == 0))
+                    .collect(Collectors.toList()));
+            itr = itr.getSuperclass();
+        }
+        annotated_methods.forEach(m -> m.setAccessible(true));
+        if(!(annotation.equals(OOPAfter.class) || annotation.equals(OOPTest.class)))
+            Collections.reverse(annotated_methods);
+        return annotated_methods;
     }
     private static List<Method> getSetUpMethods( Class<?> testClass){
         return getMethodsAnnotatedBy(testClass, OOPSetup.class);
@@ -107,7 +125,7 @@ public class OOPUnitCore {
         return getMethodsAnnotatedBy(testClass, OOPTest.class);
     }
     private static List<Method> getMethodsBeforeOrAfter(Class<?> testClass, String methodName, boolean before){
-        return Arrays.stream(testClass.getMethods())
+       /* return Arrays.stream(testClass.getMethods())
                 .filter(m -> {
                     Stream<String> tmpStream;
                     if (before){
@@ -125,7 +143,18 @@ public class OOPUnitCore {
                             .collect(Collectors.toSet())
                             .contains(methodName);
                 })
+                .collect(Collectors.toList());*/
+
+        if(before)
+            return getMethodsAnnotatedBy(testClass, OOPBefore.class).stream()
+                    .filter(m -> Arrays.stream(m.getAnnotation(OOPBefore.class).value())
+                            .collect(Collectors.toSet()).contains(methodName))
+                    .collect(Collectors.toList());
+        return getMethodsAnnotatedBy(testClass, OOPAfter.class).stream()
+                .filter(m -> Arrays.stream(m.getAnnotation(OOPAfter.class).value())
+                        .collect(Collectors.toSet()).contains(methodName))
                 .collect(Collectors.toList());
+
     }
     private static List<Method> getOOPBeforeMethods(Class<?> testClass, String methodName){
         return getMethodsBeforeOrAfter(testClass, methodName, true);
@@ -224,6 +253,11 @@ public class OOPUnitCore {
         try{
             // create a new instance of the class
             // it is "DeclaredConstructor" in order to get the latest version of it
+            Arrays.stream(testClass.getNestHost().getDeclaredFields()).forEach(c -> c.setAccessible(true));
+            Arrays.stream(testClass.getNestHost().getDeclaredMethods()).forEach(c -> c.setAccessible(true));
+            Arrays.stream(testClass.getDeclaredFields()).forEach(c -> c.setAccessible(true));
+            Arrays.stream(testClass.getDeclaredMethods()).forEach(c -> c.setAccessible(true));
+            testClass.getDeclaredConstructor().setAccessible(true);
             var = testClass.getDeclaredConstructor().newInstance();
             // get the expected exception field
             // TODO: fix it to search reqursively in the inheritence tree for the field
