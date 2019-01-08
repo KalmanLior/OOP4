@@ -7,11 +7,13 @@ import OOP.Provided.OOPResult;
 
 
 import java.lang.annotation.Annotation;
+import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /*
     Note: getDeclaredFields() returns an array of all fields declared by this class or interface which it represents,
@@ -127,11 +129,28 @@ public class OOPUnitCore {
         copyReflectedObjects(var_copy, var);
         copy_valid = false;
     }
+
+    private static Method getLatestVersionForMethod(Method m, Class<?> c){
+        Class<?> itr = c;
+        while(!itr.equals(Object.class) && !itr.isInterface()){
+            Method[] tmp = (Method[]) Arrays.stream(itr.getDeclaredMethods()).filter(m2 ->
+                            (m2.getName().equals(m.getName()) &&
+                            m2.getReturnType().equals(m.getReturnType()) &&
+                            Arrays.equals(m2.getParameterTypes(), m.getParameterTypes())))
+                            .collect(Collectors.toList()).toArray();
+            if(tmp.length == 1)
+                // there must be at most 1 function with the same signature in every level
+                return tmp[0];
+            itr = itr.getSuperclass();
+        }
+        return m; //not supposed to get here
+    }
+
     // methods for getting the desired methods in each phase of the test
     private static List<Method> getMethodsAnnotatedBy(Class<?> testClass, Class<? extends Annotation> annotation){
         LinkedList<Method> annotated_methods = new LinkedList<>();
         Class<?> itr = testClass;
-        while(!itr.equals(Object.class)){
+        while(!itr.equals(Object.class) && !itr.isInterface()){
             LinkedList<Method> tmp = (LinkedList<Method>)annotated_methods.clone();
             Arrays.stream(itr.getDeclaredMethods()).forEach(m -> m.setAccessible(true));
             annotated_methods.addAll(Arrays.stream(itr.getDeclaredMethods())
@@ -143,6 +162,13 @@ public class OOPUnitCore {
                     .collect(Collectors.toList()));
             itr = itr.getSuperclass();
         }
+        /*LinkedList<Method> requested_methods =  new LinkedList<>(annotated_methods.stream()
+                .map(m -> getLatestVersionForMethod(m, testClass))
+                .collect(Collectors.toList()));
+        requested_methods.forEach(m -> m.setAccessible(true));
+        if(!(annotation.equals(OOPAfter.class) || annotation.equals(OOPTest.class)))
+            Collections.reverse(requested_methods);
+        return requested_methods;*/
         annotated_methods.forEach(m -> m.setAccessible(true));
         if(!(annotation.equals(OOPAfter.class) || annotation.equals(OOPTest.class)))
             Collections.reverse(annotated_methods);
@@ -159,57 +185,33 @@ public class OOPUnitCore {
     private static List<Method> getOOPTestMethods(Class<?> testClass){
         return getMethodsAnnotatedBy(testClass, OOPTest.class);
     }
-    private static List<Method> getMethodsBeforeOrAfter(Class<?> testClass, String methodName, boolean before){
-       /* return Arrays.stream(testClass.getMethods())
-                .filter(m -> {
-                    Stream<String> tmpStream;
-                    if (before){
-                        if(!m.isAnnotationPresent(OOPBefore.class)){
-                            return false;
-                        }
-                        tmpStream = Arrays.stream(m.getAnnotation(OOPBefore.class).value());
-                    }else{
-                        if(!m.isAnnotationPresent(OOPAfter.class)){
-                            return false;
-                        }
-                        tmpStream = Arrays.stream(m.getAnnotation(OOPAfter.class).value());
-                    }
-                    return tmpStream
-                            .collect(Collectors.toSet())
-                            .contains(methodName);
-                })
-                .collect(Collectors.toList());*/
 
-        if(before)
-            return getMethodsAnnotatedBy(testClass, OOPBefore.class).stream()
-                    .filter(m -> Arrays.stream(m.getAnnotation(OOPBefore.class).value())
-                            .collect(Collectors.toSet()).contains(methodName))
-                    .collect(Collectors.toList());
+    private static List<Method> getOOPBeforeMethods(Class<?> testClass, String methodName){
+        return getMethodsAnnotatedBy(testClass, OOPBefore.class).stream()
+                .filter(m -> Arrays.stream(m.getAnnotation(OOPBefore.class).value())
+                        .collect(Collectors.toSet()).contains(methodName))
+                .collect(Collectors.toList());
+    }
+    private static List<Method> getOOPAfterMethods(Class<?> testClass, String methodName){
         return getMethodsAnnotatedBy(testClass, OOPAfter.class).stream()
                 .filter(m -> Arrays.stream(m.getAnnotation(OOPAfter.class).value())
                         .collect(Collectors.toSet()).contains(methodName))
                 .collect(Collectors.toList());
-
-    }
-    private static List<Method> getOOPBeforeMethods(Class<?> testClass, String methodName){
-        return getMethodsBeforeOrAfter(testClass, methodName, true);
-    }
-    private static List<Method> getOOPAfterMethods(Class<?> testClass, String methodName){
-        return getMethodsBeforeOrAfter(testClass, methodName, false);
     }
     // methods for invoking the desired methods
     private static void invokeCheckIntoUnchecked(Method m){
         try{
-            //TODO what if we are trying to invoke a private method? -> m.setAccessible(true)
+            m.setAccessible(true);      //for invoking a private method
             m.invoke(var);
         }
         catch (Exception e){
-            // we invoked a private method
+            // we invoked a private method?
             throw new RuntimeException(e);
         }
     }
     private static OOPResultImpl invokeMethod(Method method){
         try{
+            method.setAccessible(true);
             method.invoke(var);
             if(expectedException.expectesAnException()){
                 // we expect an exception, but no exception was thrown
@@ -310,7 +312,6 @@ public class OOPUnitCore {
         }
         finally {
             // run setUp methods
-            // TODO improve it to work according to the order of inheritence
             getSetUpMethods(testClass).forEach(m -> invokeCheckIntoUnchecked(m) );
             // run the tests
             if(testClass.getAnnotation(OOPTestClass.class).value()

@@ -28,8 +28,12 @@ public class OOPResultImpl implements OOPResult {
     protected boolean eq(Object obj) {
         if (!(obj instanceof OOPResultImpl))
             return false;
-        return (((OOPResultImpl) obj).getMessage().equals(msg)
-                && (((OOPResultImpl) obj).getResultType() == res));
+        boolean tmp = ((OOPResultImpl) obj).getResultType() == res;
+        if(((OOPResultImpl) obj).getMessage() != null)
+            return (tmp && ((OOPResultImpl) obj).getMessage().equals(msg));
+        if(msg != null)
+            return (tmp && msg.equals(((OOPResultImpl) obj).getMessage()));
+        return tmp;
     }
 
     @Override
