@@ -32,12 +32,20 @@ public class OOPUnitCore {
     private static class compareByOrder implements Comparator<Method>{
         @Override
         public int compare(Method o1, Method o2) {
-            int order1, order2;
+            int order1 = 0, order2 = 0;
             try{
                 if( !o1.isAnnotationPresent(OOPTest.class) || !o2.isAnnotationPresent(OOPTest.class))
                     throw new Exception();
-                order1 = o1.getAnnotation(OOPTest.class).order();
-                order2 = o2.getAnnotation(OOPTest.class).order();
+                Class<?> c1 = o1.getDeclaringClass();
+                if(c1.isAnnotationPresent(OOPTestClass.class)) {
+                    if (c1.getAnnotation(OOPTestClass.class).value() == OOPTestClass.OOPTestClassType.ORDERED)
+                        order1 = o1.getAnnotation(OOPTest.class).order();
+                }
+                Class<?> c2 = o2.getDeclaringClass();
+                if(c2.isAnnotationPresent(OOPTestClass.class)) {
+                    if (c2.getAnnotation(OOPTestClass.class).value() == OOPTestClass.OOPTestClassType.ORDERED)
+                        order2 = o2.getAnnotation(OOPTest.class).order();
+                }
             }catch (Exception e){
                 //TODO is this the correct way to handle this?
                 throw new AssertionError();
@@ -119,6 +127,11 @@ public class OOPUnitCore {
                     .filter(m -> (tmp.stream().filter(m2 ->methodsHaveSameSignature(m, m2))
                             .count() == 0))
                     .collect(Collectors.toList()));
+            /*if(annotation == OOPTest.class && itr.isAnnotationPresent(OOPTestClass.class)) {
+                if (itr.getAnnotation(OOPTestClass.class).value() == OOPTestClass.OOPTestClassType.UNORDERED){
+                 //   annotated_methods.forEach(m -> {m.anno = 0);
+                }
+            }*/
             itr = itr.getSuperclass();
         }
         LinkedList<Method> requested_methods = annotated_methods.stream()
