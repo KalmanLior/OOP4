@@ -32,7 +32,7 @@ public class OOPResultImpl implements OOPResult {
         if(((OOPResultImpl) obj).getMessage() != null)
             return (tmp && ((OOPResultImpl) obj).getMessage().equals(msg));
         if(msg != null)
-            return (tmp && msg.equals(((OOPResultImpl) obj).getMessage()));
+            return false;
         return tmp;
     }
 
@@ -41,5 +41,15 @@ public class OOPResultImpl implements OOPResult {
         return (this.eq(obj) && ((OOPResultImpl) obj).eq(this));
     }
 
-    // TODO: override hashCode?
+    @Override
+    public int hashCode() {
+        try {
+            return msg.hashCode();
+        }
+        catch (Throwable e){
+            // msg is null => res = SUCCESS
+            return 0;
+        }
+    }
+
 }

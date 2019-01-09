@@ -7,18 +7,16 @@ import OOP.Provided.OOPResult;
 
 
 import java.lang.annotation.Annotation;
-import java.lang.reflect.Array;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /*
     Note: getDeclaredFields() returns an array of all fields declared by this class or interface which it represents,
     of all access levels, but not the inherited fields!
-    getFields() returns an array of only public fields! (not sure about inheritence)
  */
 
 public class OOPUnitCore {
@@ -46,6 +44,12 @@ public class OOPUnitCore {
             }
             return order1 - order2;
         }
+    }
+    private static boolean methodsHaveSameSignature(Method m1, Method m2){
+        return ( m1.getName().equals(m2.getName())
+                && m1.getReturnType().equals(m2.getReturnType())
+                && Arrays.equals(m1.getParameterTypes(),m2.getParameterTypes())
+                );
     }
     // methods for saving the class instance and recovering in case of failures
     // in beforeTest and afterTest
@@ -78,101 +82,51 @@ public class OOPUnitCore {
                 } );
     }
 
-//    private static void copyReflectedObjects(Object source, Object destination){
-//        Field[] fields = fieldForTestClass.getDeclaredFields();
-//        for(Field field : fields){
-//            try {
-//                field.setAccessible(true);
-//                Object sourceField = field.get(source);
-//                Object destField = sourceField;
-//                Constructor copyConst = null;
-//                Method clone = null;
-//                try{
-//                    clone = sourceField.getClass().getDeclaredMethod("clone");
-//                } catch (Exception e){
-//                }
-//                if(clone != null){
-//                    clone.setAccessible(true);
-//                    destField = clone.invoke(sourceField);
-//                } else {
-//                    try {
-//                        copyConst = sourceField.getClass().getDeclaredConstructor(sourceField.getClass());
-//                    } catch (Exception e) {
-//                    }
-//                    if (copyConst != null) {
-//                        copyConst.setAccessible(true);
-//                        destField = copyConst.newInstance(sourceField);
-//                    }
-//                }
-//                field.set(destination,destField);
-//            } catch (Exception e) {
-//            }
-//        }
-//    }
-
-
     private static void snapshotObject(){
         assert (!copy_valid);
-//        if(copy_valid){
-//            //something wierd happened, not supposed to get here
-//            System.out.println("Why am i here in snapshot object???");
-//        }
         copyReflectedObjects(var, var_copy);
         copy_valid = true;
     }
     private static void recoverObject(){
         assert (copy_valid);
-//        if(!copy_valid){
-//              something wierd happened, not supposed to get here
-//              System.out.println("Why am i here in recover object???");
-//        }
         copyReflectedObjects(var_copy, var);
         copy_valid = false;
     }
 
-    private static Method getLatestVersionForMethod(Method m, Class<?> c){
+    private static Method getLatestVersionForMethod(Method m, Class<?> c) {
         Class<?> itr = c;
-        while(!itr.equals(Object.class) && !itr.isInterface()){
-            Method[] tmp = (Method[]) Arrays.stream(itr.getDeclaredMethods()).filter(m2 ->
-                            (m2.getName().equals(m.getName()) &&
-                            m2.getReturnType().equals(m.getReturnType()) &&
-                            Arrays.equals(m2.getParameterTypes(), m.getParameterTypes())))
-                            .collect(Collectors.toList()).toArray();
-            if(tmp.length == 1)
-                // there must be at most 1 function with the same signature in every level
-                return tmp[0];
-            itr = itr.getSuperclass();
+        while (!itr.equals(Object.class) && !itr.isInterface()) {
+            try {
+                return Arrays.stream(itr.getDeclaredMethods())
+                        .filter(m2 -> (m2.equals(m) || methodsHaveSameSignature(m, m2)))
+                        .findAny().get();
+                // found the method (there must be at most 1 such method)
+                // otherwise, get would throw an exception
+            } catch (Throwable e) {
+                itr = itr.getSuperclass();
+            }
         }
         return m; //not supposed to get here
     }
-
     // methods for getting the desired methods in each phase of the test
     private static List<Method> getMethodsAnnotatedBy(Class<?> testClass, Class<? extends Annotation> annotation){
         LinkedList<Method> annotated_methods = new LinkedList<>();
         Class<?> itr = testClass;
         while(!itr.equals(Object.class) && !itr.isInterface()){
             LinkedList<Method> tmp = (LinkedList<Method>)annotated_methods.clone();
-            Arrays.stream(itr.getDeclaredMethods()).forEach(m -> m.setAccessible(true));
             annotated_methods.addAll(Arrays.stream(itr.getDeclaredMethods())
                     .filter(m -> m.isAnnotationPresent(annotation))
-                    .filter(m -> (tmp.stream().filter(m2 ->
-                            (m2.getName().equals(m.getName()) &&
-                            m2.getReturnType().equals(m.getReturnType()) &&
-                                    Arrays.equals(m2.getParameterTypes(), m.getParameterTypes()))).count() == 0))
+                    .filter(m -> (tmp.stream().filter(m2 ->methodsHaveSameSignature(m, m2))
+                            .count() == 0))
                     .collect(Collectors.toList()));
             itr = itr.getSuperclass();
         }
-        /*LinkedList<Method> requested_methods =  new LinkedList<>(annotated_methods.stream()
-                .map(m -> getLatestVersionForMethod(m, testClass))
-                .collect(Collectors.toList()));
-        requested_methods.forEach(m -> m.setAccessible(true));
+        LinkedList<Method> requested_methods = annotated_methods.stream()
+                    .map(m -> getLatestVersionForMethod(m, testClass))
+                    .collect(Collectors.toCollection(LinkedList::new));
         if(!(annotation.equals(OOPAfter.class) || annotation.equals(OOPTest.class)))
             Collections.reverse(requested_methods);
-        return requested_methods;*/
-        annotated_methods.forEach(m -> m.setAccessible(true));
-        if(!(annotation.equals(OOPAfter.class) || annotation.equals(OOPTest.class)))
-            Collections.reverse(annotated_methods);
-        return annotated_methods;
+        return requested_methods;
     }
     private static List<Method> getSetUpMethods( Class<?> testClass){
         return getMethodsAnnotatedBy(testClass, OOPSetup.class);
@@ -277,7 +231,7 @@ public class OOPUnitCore {
         }catch (Exception e){
             // we got an exception in getOOPBeforeMethods or getOOPAfterMethods
             // most likely in getOOPBefore, need to think about the situations
-            System.out.println("why am i here???");
+            // System.out.println("why am i here???");
         }
         //TODO: is this ok? if we got here, we didn;t catch anything
         return new OOPResultImpl(OOPResult.OOPTestResult.SUCCESS, null);
@@ -290,15 +244,11 @@ public class OOPUnitCore {
         try{
             // create a new instance of the class
             // it is "DeclaredConstructor" in order to get the latest version of it
-            Arrays.stream(testClass.getNestHost().getDeclaredFields()).forEach(c -> c.setAccessible(true));
-            Arrays.stream(testClass.getNestHost().getDeclaredMethods()).forEach(c -> c.setAccessible(true));
-            Arrays.stream(testClass.getDeclaredFields()).forEach(c -> c.setAccessible(true));
-            Arrays.stream(testClass.getDeclaredMethods()).forEach(c -> c.setAccessible(true));
-            testClass.getDeclaredConstructor().setAccessible(true);
-            var = testClass.getDeclaredConstructor().newInstance();
-            var_copy = testClass.getDeclaredConstructor().newInstance();
+            Constructor<?> ctr = testClass.getDeclaredConstructor();
+            ctr.setAccessible(true);
+            var = ctr.newInstance();
+            var_copy = ctr.newInstance();
             // get the expected exception field
-            // TODO: fix it to search reqursively in the inheritence tree for the field
             exceptionField = Arrays.stream(testClass.getDeclaredFields())
                     .filter(field ->  field.isAnnotationPresent(OOPExceptionRule.class))
                     .findFirst().get();
