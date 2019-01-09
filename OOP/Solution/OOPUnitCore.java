@@ -33,22 +33,16 @@ public class OOPUnitCore {
         @Override
         public int compare(Method o1, Method o2) {
             int order1 = 0, order2 = 0;
-            try{
-                if( !o1.isAnnotationPresent(OOPTest.class) || !o2.isAnnotationPresent(OOPTest.class))
-                    throw new Exception();
-                Class<?> c1 = o1.getDeclaringClass();
-                if(c1.isAnnotationPresent(OOPTestClass.class)) {
-                    if (c1.getAnnotation(OOPTestClass.class).value() == OOPTestClass.OOPTestClassType.ORDERED)
-                        order1 = o1.getAnnotation(OOPTest.class).order();
-                }
-                Class<?> c2 = o2.getDeclaringClass();
-                if(c2.isAnnotationPresent(OOPTestClass.class)) {
-                    if (c2.getAnnotation(OOPTestClass.class).value() == OOPTestClass.OOPTestClassType.ORDERED)
-                        order2 = o2.getAnnotation(OOPTest.class).order();
-                }
-            }catch (Exception e){
-                //TODO is this the correct way to handle this?
-                throw new AssertionError();
+            assert (o1.isAnnotationPresent(OOPTest.class) || o2.isAnnotationPresent(OOPTest.class));
+            Class<?> c1 = o1.getDeclaringClass();
+            if (c1.isAnnotationPresent(OOPTestClass.class)) {
+                if (c1.getAnnotation(OOPTestClass.class).value() == OOPTestClass.OOPTestClassType.ORDERED)
+                    order1 = o1.getAnnotation(OOPTest.class).order();
+            }
+            Class<?> c2 = o2.getDeclaringClass();
+            if (c2.isAnnotationPresent(OOPTestClass.class)) {
+                if (c2.getAnnotation(OOPTestClass.class).value() == OOPTestClass.OOPTestClassType.ORDERED)
+                    order2 = o2.getAnnotation(OOPTest.class).order();
             }
             return order1 - order2;
         }
@@ -127,11 +121,6 @@ public class OOPUnitCore {
                     .filter(m -> (tmp.stream().filter(m2 ->methodsHaveSameSignature(m, m2))
                             .count() == 0))
                     .collect(Collectors.toList()));
-            /*if(annotation == OOPTest.class && itr.isAnnotationPresent(OOPTestClass.class)) {
-                if (itr.getAnnotation(OOPTestClass.class).value() == OOPTestClass.OOPTestClassType.UNORDERED){
-                 //   annotated_methods.forEach(m -> {m.anno = 0);
-                }
-            }*/
             itr = itr.getSuperclass();
         }
         LinkedList<Method> requested_methods = annotated_methods.stream()
@@ -202,7 +191,6 @@ public class OOPUnitCore {
                     (new OOPExceptionMismatchError(expectedException.getExpectedException(), e.getClass() )).getMessage());
         }
         catch (Exception e){
-            // we get here if we try to invoke a private method
             throw new RuntimeException(e);
         }
     }
@@ -227,7 +215,6 @@ public class OOPUnitCore {
             if(!runBeforeOrAfterTests(method, str -> getOOPBeforeMethods(fieldForTestClass, str))){
                 return new OOPResultImpl(OOPResult.OOPTestResult.ERROR, fieldForTestClass.getName());
             }
-            // TODO should the expected exception be reset here, or before the BeforeMethods?
             if(exceptionField != null) {
                 exceptionField.set(var, OOPExpectedException.none());
                 expectedException = (OOPExpectedExceptionImpl) exceptionField.get(var);
@@ -240,14 +227,10 @@ public class OOPUnitCore {
                 return new OOPResultImpl(OOPResult.OOPTestResult.ERROR, fieldForTestClass.getName());
             }
             return tmp;
-
-        }catch (Exception e){
-            // we got an exception in getOOPBeforeMethods or getOOPAfterMethods
-            // most likely in getOOPBefore, need to think about the situations
-            // System.out.println("why am i here???");
         }
-        //TODO: is this ok? if we got here, we didn;t catch anything
-        return new OOPResultImpl(OOPResult.OOPTestResult.SUCCESS, null);
+        catch (Exception e){
+            throw new RuntimeException(e);
+        }
     }
     private static OOPTestSummary runTestsForRunClass(Class<?> testClass, List<Method> testsToRun){
         fieldForTestClass = testClass;
