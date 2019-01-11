@@ -1,10 +1,6 @@
 package OOP.Solution;
 
-import OOP.Provided.OOPAssertionFailure;
-import OOP.Provided.OOPExceptionMismatchError;
-import OOP.Provided.OOPExpectedException;
-import OOP.Provided.OOPResult;
-
+import OOP.Provided.*;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Constructor;
@@ -14,76 +10,96 @@ import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/*
-    Note: getDeclaredFields() returns an array of all fields declared by this class or interface which it represents,
-    of all access levels, but not the inherited fields!
- */
-
 public class OOPUnitCore {
-    // private fields so we can access them from every method without having to carry it around
+    //=========== private fields so we can access them from every method without having to carry it around ==========//
     private static Object var;
     private static Object var_copy;
     private static boolean copy_valid;
     private static Class<?> fieldForTestClass;
     private static OOPExpectedExceptionImpl expectedException;
     private static Field exceptionField;
-    // comparator for getting the order we want, might need to be changed
-    // in order to support comparing with inherited methods
+    //================================== comparator for getting the order we want= ===================================//
     private static class compareByOrder implements Comparator<Method>{
-        @Override
-        public int compare(Method o1, Method o2) {
-            int order1 = 0, order2 = 0;
-            assert (o1.isAnnotationPresent(OOPTest.class) || o2.isAnnotationPresent(OOPTest.class));
-            Class<?> c1 = o1.getDeclaringClass();
+        private int getMethodOrder(Method m){
+            int order = 0;
+            // get the class which declared the method,
+            // or the lowest in the inheritance tree which overrides the method
+            Class<?> c1 = m.getDeclaringClass();
             if (c1.isAnnotationPresent(OOPTestClass.class)) {
                 if (c1.getAnnotation(OOPTestClass.class).value() == OOPTestClass.OOPTestClassType.ORDERED)
-                    order1 = o1.getAnnotation(OOPTest.class).order();
+                    order = m.getAnnotation(OOPTest.class).order();
             }
-            Class<?> c2 = o2.getDeclaringClass();
-            if (c2.isAnnotationPresent(OOPTestClass.class)) {
-                if (c2.getAnnotation(OOPTestClass.class).value() == OOPTestClass.OOPTestClassType.ORDERED)
-                    order2 = o2.getAnnotation(OOPTest.class).order();
-            }
-            return order1 - order2;
+            // we assume that if the declaring class is NOT annotated with @OOPTestClass, and the method is still
+            // annotated with @OOPTest, then it's order is 0.
+            return order;
+        }
+
+        @Override
+        public int compare(Method m1, Method m2) {
+            assert (m1.isAnnotationPresent(OOPTest.class) && m2.isAnnotationPresent(OOPTest.class));
+            return getMethodOrder(m1) - getMethodOrder(m2);
         }
     }
-    private static boolean methodsHaveSameSignature(Method m1, Method m2){
-        return ( m1.getName().equals(m2.getName())
-                && m1.getReturnType().equals(m2.getReturnType())
-                && Arrays.equals(m1.getParameterTypes(),m2.getParameterTypes())
-                );
+    //======================= methods for saving the class instance and recovering it ================================//
+    private static Method findCloneMethod(Class<?> c){
+        Class<?> itr = c;
+        // return clone function (even if it's not public) or null in case it was found in Object and not earlier.
+        while(!itr.equals(Object.class) && !itr.isInterface()){
+            try{
+                return itr.getDeclaredMethod("clone");
+            }catch(Exception e){
+                // didn't find clone(), try again
+                itr = itr.getSuperclass();
+            }
+        }
+        return null;
     }
-    // methods for saving the class instance and recovering in case of failures
-    // in beforeTest and afterTest
+    private static Constructor findCopyCtr(Class<?> c){
+        Class<?> itr = c;
+        // return copy constructor (even if it's not public) or null in case it was found in Object and not earlier.
+        while(!itr.equals(Object.class) && !itr.isInterface()){
+            try{
+                return itr.getDeclaredConstructor(c);
+            }catch(Exception e){
+                // didn't find clone(), try again
+                itr = itr.getSuperclass();
+            }
+        }
+        return null;
+    }
 
     private static void copyReflectedObjects(Object source, Object destination){
         Arrays.stream(fieldForTestClass.getDeclaredFields())
                 .forEach(field -> {
                     try{
+                        if(java.lang.reflect.Modifier.isStatic(field.getModifiers()))
+                            return; // do not copy a static field
+                        // to save private fields
                         field.setAccessible(true);
-                        if(Arrays.stream(field.getType().getInterfaces())
-                                .collect(Collectors.toSet())
-                                .contains(Cloneable.class)){
-                            //field is cloneable
-                            field.set(destination,
-                                    field.getType().getDeclaredMethod("clone").invoke(field.get(source)));
-                        }else{
+                        try{
+                                // try to use clone (even if it's not public or not existing)
+                                Method clone_method = findCloneMethod(field.getType());
+                                clone_method.setAccessible(true);
+                                field.set(destination, clone_method.invoke(field.get(source)));
+                        }catch(Exception e1){
                             try {
                                 // try to use the copy constructor
-                                field.set(destination,
-                                        field.getType().getDeclaredConstructor((field.getType())).newInstance(field.get(source)));
-                            }catch (Exception e){
+                                Constructor copy_ctr = findCopyCtr(field.getType());
+                                // in case copy constructor is private
+                                copy_ctr.setAccessible(true);
+                                field.set(destination, copy_ctr.newInstance(field.get(source)));
+                            }catch (Exception e2){
                                 // field doesn't have either
                                 field.set(destination, field.get(source));
                             }
                         }
                     }
-                    catch (Exception e){
-                        // something weird happened, not supposed to get here
+                    catch (Exception e3){
+                        // not supposed to get here
+                        throw new RuntimeException(e3);
                     }
                 } );
     }
-
     private static void snapshotObject(){
         assert (!copy_valid);
         copyReflectedObjects(var, var_copy);
@@ -95,7 +111,16 @@ public class OOPUnitCore {
         copy_valid = false;
     }
 
+    //===================== methods for working with reflected  methods and it's annotations =========================//
+    private static boolean methodsHaveSameSignature(Method m1, Method m2){
+        // for checking if one method overrides the other
+        return ( m1.getName().equals(m2.getName())
+                && m1.getReturnType().equals(m2.getReturnType())
+                && Arrays.equals(m1.getParameterTypes(),m2.getParameterTypes())
+        );
+    }
     private static Method getLatestVersionForMethod(Method m, Class<?> c) {
+        // in case a class overrides an annotated method and doesn't annotate it again
         Class<?> itr = c;
         while (!itr.equals(Object.class) && !itr.isInterface()) {
             try {
@@ -103,7 +128,7 @@ public class OOPUnitCore {
                         .filter(m2 -> (m2.equals(m) || methodsHaveSameSignature(m, m2)))
                         .findAny().get();
                 // found the method (there must be at most 1 such method)
-                // otherwise, get would throw an exception
+                // otherwise, get() would throw an exception
             } catch (Throwable e) {
                 itr = itr.getSuperclass();
             }
@@ -114,19 +139,24 @@ public class OOPUnitCore {
     private static List<Method> getMethodsAnnotatedBy(Class<?> testClass, Class<? extends Annotation> annotation){
         LinkedList<Method> annotated_methods = new LinkedList<>();
         Class<?> itr = testClass;
+        // this way we make sure that we get the methods in the desired order
         while(!itr.equals(Object.class) && !itr.isInterface()){
+            // we assume that if the class <itr> is NOT annotated with @OOPTestClass, we still
+            // need to add it's annotated methods, otherwise we could have skipped them here or throw an exception
             LinkedList<Method> tmp = (LinkedList<Method>)annotated_methods.clone();
             annotated_methods.addAll(Arrays.stream(itr.getDeclaredMethods())
                     .filter(m -> m.isAnnotationPresent(annotation))
-                    .filter(m -> (tmp.stream().filter(m2 ->methodsHaveSameSignature(m, m2))
-                            .count() == 0))
+                    .filter(m -> (tmp.stream()
+                                    .filter(m2 ->methodsHaveSameSignature(m, m2))
+                                    .count() == 0)) // the method is not an overridden method
                     .collect(Collectors.toList()));
-            itr = itr.getSuperclass();
+            itr = itr.getSuperclass(); //iterate threw the inheritance tree
         }
         LinkedList<Method> requested_methods = annotated_methods.stream()
                     .map(m -> getLatestVersionForMethod(m, testClass))
                     .collect(Collectors.toCollection(LinkedList::new));
         if(!(annotation.equals(OOPAfter.class) || annotation.equals(OOPTest.class)))
+            // the annotation is @OOPBefore or @OOPSetUp, and the order has to be reversed
             Collections.reverse(requested_methods);
         return requested_methods;
     }
@@ -135,13 +165,13 @@ public class OOPUnitCore {
     }
     private static List<Method> getTaggedMethods(Class<?> testClass, String tag){
         return getOOPTestMethods(testClass).stream()
+                // we assume that the tag must be EXACTLY the same tag
                 .filter(m -> m.getAnnotation(OOPTest.class).tag().equals(tag))
                 .collect(Collectors.toList());
     }
     private static List<Method> getOOPTestMethods(Class<?> testClass){
         return getMethodsAnnotatedBy(testClass, OOPTest.class);
     }
-
     private static List<Method> getOOPBeforeMethods(Class<?> testClass, String methodName){
         return getMethodsAnnotatedBy(testClass, OOPBefore.class).stream()
                 .filter(m -> Arrays.stream(m.getAnnotation(OOPBefore.class).value())
@@ -161,7 +191,6 @@ public class OOPUnitCore {
             m.invoke(var);
         }
         catch (Exception e){
-            // we invoked a private method?
             throw new RuntimeException(e);
         }
     }
@@ -171,14 +200,15 @@ public class OOPUnitCore {
             method.invoke(var);
             if(expectedException.expectesAnException()){
                 // we expect an exception, but no exception was thrown
-                return new OOPResultImpl(OOPResult.OOPTestResult.ERROR,expectedException.getExpectedException().getClass().getName());
+                return new OOPResultImpl(OOPResult.OOPTestResult.ERROR,
+                        expectedException.getExpectedException().getName());
             }
             // method was invoked successfully
             return new OOPResultImpl(OOPResult.OOPTestResult.SUCCESS,null);
         }
         catch (java.lang.reflect.InvocationTargetException e){
-            // received an assertion - test failed
-            if(e.getTargetException().getClass().equals(OOPAssertionFailure.class))
+            if(e.getTargetException() instanceof OOPAssertionFailure)
+                // received an assertion - test failed
                 return new OOPResultImpl(OOPResult.OOPTestResult.FAILURE, e.getMessage());
             if(!expectedException.expectesAnException())
                 // we did not expect an exception, but an exception was thrown
@@ -278,6 +308,7 @@ public class OOPUnitCore {
                 // in case equals throws an exception
                 res = !(expected.equals(actual) && actual.equals(expected));
             } catch (Exception e) {
+                // one of the objects is null and the other is not
                 throw new OOPAssertionFailure(expected, actual);
             }
             if (res)
