@@ -54,19 +54,6 @@ public class OOPUnitCore {
         }
         return null;
     }
-    private static Constructor findCopyCtr(Class<?> c){
-        Class<?> itr = c;
-        // return copy constructor (even if it's not public) or null in case it was found in Object and not earlier.
-        while(!itr.equals(Object.class) && !itr.isInterface()){
-            try{
-                return itr.getDeclaredConstructor(c);
-            }catch(Exception e){
-                // didn't find clone(), try again
-                itr = itr.getSuperclass();
-            }
-        }
-        return null;
-    }
 
     private static void copyReflectedObjects(Object source, Object destination){
         Arrays.stream(fieldForTestClass.getDeclaredFields())
@@ -84,7 +71,7 @@ public class OOPUnitCore {
                         }catch(Exception e1){
                             try {
                                 // try to use the copy constructor
-                                Constructor copy_ctr = findCopyCtr(field.getType());
+                                Constructor copy_ctr = field.getType().getDeclaredConstructor(field.getType());
                                 // in case copy constructor is private
                                 copy_ctr.setAccessible(true);
                                 field.set(destination, copy_ctr.newInstance(field.get(source)));
@@ -141,17 +128,35 @@ public class OOPUnitCore {
         Class<?> itr = testClass;
         // this way we make sure that we get the methods in the desired order
         while(!itr.equals(Object.class) && !itr.isInterface()){
-            // we assume that if the class <itr> is NOT annotated with @OOPTestClass, we still
-            // need to add it's annotated methods, otherwise we could have skipped them here or throw an exception
-            LinkedList<Method> tmp = (LinkedList<Method>)annotated_methods.clone();
-            annotated_methods.addAll(Arrays.stream(itr.getDeclaredMethods())
-                    .filter(m -> m.isAnnotationPresent(annotation))
-                    .filter(m -> (tmp.stream()
-                                    .filter(m2 ->methodsHaveSameSignature(m, m2))
-                                    .count() == 0)) // the method is not an overridden method
-                    .collect(Collectors.toList()));
+            Collection<Method> methods_to_add;
+            LinkedList<Method> tmp = (LinkedList<Method>) annotated_methods.clone();
+            if(!annotation.equals(OOPTest.class) || itr.isAnnotationPresent(OOPTestClass.class)) {
+                // we assume that if the class <itr> is NOT annotated with @OOPTestClass,
+                // we only add it's @OOPAfter, @OOPBefore, and @OOPSetUp methods.
+                // if the methods are annotated with @OOPTest, we add them only if they are overridden
+                // later in a class which is annotated with @OOPTestClass
+                methods_to_add = Arrays.stream(itr.getDeclaredMethods())
+                        .filter(m -> m.isAnnotationPresent(annotation))
+                        .filter(m -> (tmp.stream() // there is no method with the same signature in the collection already
+                                .noneMatch(m2 -> methodsHaveSameSignature(m, m2))))
+                        .collect(Collectors.toList());
+            }else{
+                // adding OOPTest methods, for a class which is not annotated with OOPTestClass,
+                // we are only adding the methods which are overridden in a class which is annotated with OOPTestClass
+                methods_to_add = Arrays.stream(itr.getDeclaredMethods())
+                        .filter(m -> m.isAnnotationPresent(annotation)) // check that it is an OOPTest method
+                        .filter(m -> getLatestVersionForMethod(m, testClass)    // check that it is overridden later
+                                .getDeclaringClass()                            // in a OOPTestClass class
+                                .isAnnotationPresent(annotation))
+                        .filter(m -> (tmp.stream() // there is no method with the same signature in the collection already
+                                .noneMatch(m2 -> methodsHaveSameSignature(m, m2))))
+                        .collect(Collectors.toList());
+            }
+            annotated_methods.addAll(methods_to_add);
             itr = itr.getSuperclass(); //iterate threw the inheritance tree
         }
+        // get the most recent version of the methods (in case they were annotated earlier in the inheritance tree
+        // but not in the current class)
         LinkedList<Method> requested_methods = annotated_methods.stream()
                     .map(m -> getLatestVersionForMethod(m, testClass))
                     .collect(Collectors.toCollection(LinkedList::new));
@@ -228,7 +233,7 @@ public class OOPUnitCore {
         List<Method> methodsToRun = action.apply(method.getName());
         snapshotObject();
         try {
-            methodsToRun.forEach(m -> invokeCheckIntoUnchecked(m));
+            methodsToRun.forEach(OOPUnitCore::invokeCheckIntoUnchecked);
         }catch (Exception e){
             recoverObject();
             // we are not supposed to get an exception in recoverObject, because it does the same
@@ -288,7 +293,7 @@ public class OOPUnitCore {
         }
         finally {
             // run setUp methods
-            getSetUpMethods(testClass).forEach(m -> invokeCheckIntoUnchecked(m) );
+            getSetUpMethods(testClass).forEach(OOPUnitCore::invokeCheckIntoUnchecked);
             // run the tests
             if(testClass.getAnnotation(OOPTestClass.class).value()
                        == OOPTestClass.OOPTestClassType.ORDERED)
